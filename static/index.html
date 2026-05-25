@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Материалы</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="workspace auth-panel hidden" id="authPanel">
+      <div class="title-row">
+        <div>
+          <p class="eyebrow">Доступ к сервису</p>
+          <h1>Авторизация</h1>
+        </div>
+      </div>
+      <form id="loginForm" class="login-form">
+        <label>
+          <span>Пароль</span>
+          <input id="passwordInput" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="primary-button" type="submit">Войти</button>
+        <span class="error-text" id="loginError"></span>
+      </form>
+    </section>
+
+    <section class="workspace hidden" id="appShell">
+      <div class="title-row">
+        <div>
+          <p class="eyebrow">Перераспределение материалов</p>
+          <h1 id="processTitle">Ротация</h1>
+        </div>
+        <div class="toolbar">
+          <div class="status-pill" id="socketStatus">WebSocket</div>
+          <button class="ghost-button" id="logoutButton" type="button">Выйти</button>
+        </div>
+      </div>
+
+      <form id="uploadForm">
+        <input id="jobId" name="job_id" type="hidden">
+
+        <fieldset class="process-menu" aria-label="Процесс">
+          <label>
+            <input name="process" type="radio" value="rotation" checked>
+            <span>Ротация</span>
+          </label>
+          <label>
+            <input name="process" type="radio" value="alignment">
+            <span>Выравнивание</span>
+          </label>
+        </fieldset>
+
+        <div class="upload-panel">
+          <label class="file-drop" for="fileInput">
+            <input id="fileInput" name="file" type="file" accept=".xlsx" required>
+            <span class="file-icon">XLSX</span>
+            <span>
+              <strong id="fileName">Выберите файл</strong>
+              <small id="processHint">Материалы будут распределены по колонке «Закрепить».</small>
+            </span>
+          </label>
+          <div class="actions">
+            <button class="primary-button" id="submitButton" type="submit">Запустить ротацию</button>
+            <button class="secondary-button" id="cancelButton" type="button" disabled>Отменить</button>
+          </div>
+        </div>
+      </form>
+
+      <div class="progress-area" aria-live="polite">
+        <div class="progress-meta">
+          <span id="progressText">Ожидание файла</span>
+          <b id="progressPercent">0%</b>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
+
+      <section class="progress-log" aria-label="Подробный ход обработки">
+        <h2>Подробности</h2>
+        <ol id="progressLog"></ol>
+      </section>
+
+      <div class="result-row">
+        <a class="download-link hidden" id="downloadLink" href="#">Скачать результат</a>
+        <span class="error-text" id="errorText"></span>
+      </div>
+
+      <section class="history-panel" aria-label="История задач">
+        <div class="history-header">
+          <h2>История</h2>
+          <button class="ghost-button danger-button" id="clearHistoryButton" type="button">Очистить</button>
+        </div>
+        <ol id="historyList"></ol>
+      </section>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
