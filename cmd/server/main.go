@@ -2209,6 +2209,10 @@ func onlyDigits(value string) bool {
 }
 
 func toDecimal(value string) decimal.Decimal {
+	if number, ok := parseCleanDecimal(value); ok {
+		return number
+	}
+
 	text := normalizeDecimalText(value)
 	if text == "" {
 		return decimal.Zero
@@ -2218,6 +2222,19 @@ func toDecimal(value string) decimal.Decimal {
 		return decimal.Zero
 	}
 	return number
+}
+
+func parseCleanDecimal(value string) (decimal.Decimal, bool) {
+	text := strings.TrimSpace(value)
+	text = strings.ReplaceAll(text, " ", "")
+	text = strings.ReplaceAll(text, "\u00a0", "")
+	text = strings.ReplaceAll(text, "\u202f", "")
+	text = strings.ReplaceAll(text, ",", ".")
+	if text == "" {
+		return decimal.Zero, false
+	}
+	number, err := decimal.NewFromString(text)
+	return number, err == nil
 }
 
 func normalizeDecimalText(value string) string {
