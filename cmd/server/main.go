@@ -2209,8 +2209,7 @@ func onlyDigits(value string) bool {
 }
 
 func toDecimal(value string) decimal.Decimal {
-	text := strings.ReplaceAll(strings.TrimSpace(value), " ", "")
-	text = strings.ReplaceAll(text, ",", ".")
+	text := normalizeDecimalText(value)
 	if text == "" {
 		return decimal.Zero
 	}
@@ -2219,6 +2218,69 @@ func toDecimal(value string) decimal.Decimal {
 		return decimal.Zero
 	}
 	return number
+}
+
+func normalizeDecimalText(value string) string {
+	var builder strings.Builder
+	negative := false
+	for _, r := range strings.TrimSpace(value) {
+		switch {
+		case r >= '0' && r <= '9':
+			builder.WriteRune(r)
+		case r == ',' || r == '.':
+			builder.WriteRune(r)
+		case r == '-' || r == '−':
+			if builder.Len() == 0 {
+				negative = true
+			}
+		}
+	}
+
+	text := builder.String()
+	if text == "" {
+		return ""
+	}
+
+	lastComma := strings.LastIndex(text, ",")
+	lastDot := strings.LastIndex(text, ".")
+	decimalIndex := -1
+	if lastComma >= 0 && lastDot >= 0 {
+		decimalIndex = max(lastComma, lastDot)
+	} else if lastComma >= 0 {
+		decimalIndex = decimalSeparatorIndex(text, ",", lastComma)
+	} else if lastDot >= 0 {
+		decimalIndex = decimalSeparatorIndex(text, ".", lastDot)
+	}
+
+	var normalized strings.Builder
+	if negative {
+		normalized.WriteByte('-')
+	}
+	for index, r := range text {
+		if r >= '0' && r <= '9' {
+			normalized.WriteRune(r)
+			continue
+		}
+		if index == decimalIndex {
+			normalized.WriteByte('.')
+		}
+	}
+	return normalized.String()
+}
+
+func decimalSeparatorIndex(text, separator string, lastIndex int) int {
+	if strings.Count(text, separator) > 1 {
+		decimalDigits := len(text) - lastIndex - 1
+		if decimalDigits > 0 && decimalDigits != 3 {
+			return lastIndex
+		}
+		return -1
+	}
+	decimalDigits := len(text) - lastIndex - 1
+	if decimalDigits > 0 && decimalDigits <= 2 {
+		return lastIndex
+	}
+	return -1
 }
 
 func pyAdd(left, right decimal.Decimal) decimal.Decimal {
