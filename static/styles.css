@@ -384,6 +384,23 @@ h2 {
   border: 1px solid #edf1f6;
   border-radius: 8px;
   padding: 10px 12px;
+  background: #ffffff;
+  border-left-width: 4px;
+}
+
+.history-item--running {
+  border-color: #ead89c;
+  background: #fffaf0;
+}
+
+.history-item--ready {
+  border-color: #b8dfc7;
+  background: #f2fbf5;
+}
+
+.history-item--error {
+  border-color: #efc0ba;
+  background: #fff6f4;
 }
 
 .history-item button {

@@ -50,6 +50,8 @@ const processes = {
 
 let socket;
 let activeJobId = localStorage.getItem('activeJobId') || '';
+const historySockets = new Map();
+const historyRows = new Map();
 
 function currentProcessKey() {
   return processInputs.find((input) => input.checked)?.value || 'rotation';
@@ -139,14 +141,61 @@ function connectProgress(jobId) {
       refreshHistory();
     }
     if (data.type === 'job_error' || data.type === 'job_canceled') {
-      errorText.textContent = data.message || 'Задача остановлена.';
+      const message = data.message || 'Задача остановлена.';
+      errorText.textContent = message;
       cancelButton.disabled = true;
       submitButton.disabled = false;
       localStorage.removeItem('activeJobId');
-      appendProgressLog(0, errorText.textContent);
+      setProgress(data.type === 'job_canceled' ? progressPercent.textContent.replace('%', '') : 0, message);
+      appendProgressLog(data.type === 'job_canceled' ? progressPercent.textContent.replace('%', '') : 0, message);
       refreshHistory();
     }
   });
+}
+
+function connectHistoryProgress(jobId) {
+  if (historySockets.has(jobId)) {
+    return;
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const historySocket = new WebSocket(`${protocol}://${window.location.host}/ws/rotation/${jobId}/`);
+  historySockets.set(jobId, historySocket);
+
+  historySocket.addEventListener('message', (event) => {
+    const data = JSON.parse(event.data);
+    const row = historyRows.get(jobId);
+    if (!row) {
+      return;
+    }
+    if (data.type === 'progress') {
+      updateHistoryRow(row, {
+        percent: data.percent,
+        message: data.message,
+        state: data.state || row.dataset.state || 'running',
+      });
+    }
+    if (data.type === 'job_ready' || data.type === 'job_error' || data.type === 'job_canceled') {
+      historySocket.close();
+      refreshHistory();
+    }
+  });
+
+  historySocket.addEventListener('close', () => {
+    historySockets.delete(jobId);
+  });
+}
+
+function syncHistorySockets(runningJobIds) {
+  const running = new Set(runningJobIds);
+  for (const [jobId, historySocket] of historySockets) {
+    if (!running.has(jobId)) {
+      historySocket.close();
+      historySockets.delete(jobId);
+    }
+  }
+  for (const jobId of running) {
+    connectHistoryProgress(jobId);
+  }
 }
 
 function setProgress(percent, message) {
@@ -256,9 +305,11 @@ function formatDate(value) {
 
 async function refreshHistory() {
   const jobs = await requestJSON('/api/jobs');
+  historyRows.clear();
   historyList.replaceChildren();
   clearHistoryButton.disabled = jobs.length === 0;
   if (!jobs.length) {
+    syncHistorySockets([]);
     const empty = document.createElement('li');
     empty.className = 'history-empty';
     empty.textContent = 'Истории пока нет';
@@ -266,17 +317,20 @@ async function refreshHistory() {
     return;
   }
 
+  const runningJobIds = [];
   for (const job of jobs) {
     const item = document.createElement('li');
-    item.className = 'history-item';
+    item.className = `history-item history-item--${historyStateClass(job.state)}`;
+    item.dataset.state = job.state;
+    item.dataset.process = job.process;
     const title = document.createElement('button');
     title.type = 'button';
-    title.textContent = `${processes[job.process]?.title || job.process} · ${statusText(job.state)} · ${job.percent}%`;
+    title.dataset.role = 'title';
     title.addEventListener('click', () => restoreJob(job.id));
 
     const meta = document.createElement('span');
+    meta.dataset.role = 'meta';
     const completed = formatDate(job.completed_at);
-    meta.textContent = `Запущен: ${formatDate(job.started_at || job.created_at)}${completed ? ` · Завершен: ${completed}` : ''}`;
 
     item.append(title, meta);
     if (job.download_url) {
@@ -285,8 +339,44 @@ async function refreshHistory() {
       link.textContent = 'Скачать';
       item.append(link);
     }
+    historyRows.set(job.id, item);
+    updateHistoryRow(item, job);
+    if (job.state === 'running') {
+      runningJobIds.push(job.id);
+    }
     historyList.append(item);
   }
+  syncHistorySockets(runningJobIds);
+}
+
+function updateHistoryRow(row, job) {
+  const state = job.state || row.dataset.state || 'running';
+  const percent = Math.max(0, Math.min(100, Number(job.percent) || 0));
+  row.dataset.state = state;
+  row.classList.remove('history-item--running', 'history-item--ready', 'history-item--error', 'history-item--canceled');
+  row.classList.add(`history-item--${historyStateClass(state)}`);
+
+  const title = row.querySelector('[data-role="title"]');
+  if (title) {
+    const processKey = job.process || row.dataset.process || '';
+    title.textContent = `${processes[processKey]?.title || processKey} · ${statusText(state)} · ${percent}%`;
+  }
+
+  const meta = row.querySelector('[data-role="meta"]');
+  if (meta && job.started_at) {
+    const completed = formatDate(job.completed_at);
+    meta.textContent = `Запущен: ${formatDate(job.started_at || job.created_at)}${completed ? ` · Завершен: ${completed}` : ''}`;
+  }
+}
+
+function historyStateClass(state) {
+  if (state === 'ready') {
+    return 'ready';
+  }
+  if (state === 'error' || state === 'canceled') {
+    return 'error';
+  }
+  return 'running';
 }
 
 async function clearHistory() {
@@ -295,6 +385,7 @@ async function clearHistory() {
   }
   clearHistoryButton.disabled = true;
   await requestJSON('/api/history/clear', { method: 'POST' });
+  syncHistorySockets([]);
   localStorage.removeItem('activeJobId');
   activeJobId = '';
   resetResult();
@@ -334,6 +425,7 @@ loginForm.addEventListener('submit', async (event) => {
 
 logoutButton.addEventListener('click', async () => {
   await requestJSON('/api/logout', { method: 'POST' });
+  syncHistorySockets([]);
   localStorage.removeItem('activeJobId');
   showAuthenticated(false);
 });

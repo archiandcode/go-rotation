@@ -1042,7 +1042,8 @@ func redistributeWorkbook(ctx context.Context, input io.Reader, jobID string, ap
 	_ = styleAttachColumn(workbook, sheet, cols.attach)
 
 	app.sendProgress(jobID, 84, "Формирую лист с итогами")
-	_ = replaceSummarySheet(workbook, loads, fixedCount, fixedIINCount, cfg.summaryTitle)
+	summaryLoads, _ := collectFinalLoads(workbook, sheet, cols)
+	_ = replaceSummarySheet(workbook, summaryLoads, fixedCount, fixedIINCount, cfg.summaryTitle)
 
 	var output bytes.Buffer
 	if err := workbook.Write(&output); err != nil {
@@ -1257,6 +1258,28 @@ func addLoad(loads map[loginKey]*load, loginIINs map[loginKey]map[string]bool, k
 		loginIINs[key][iin] = true
 		loads[key].iinCount++
 	}
+}
+
+func collectFinalLoads(workbook *excelize.File, sheet string, cols columns) (map[loginKey]*load, map[loginKey]map[string]bool) {
+	rows, err := workbook.GetRows(sheet)
+	if err != nil {
+		rows = nil
+	}
+	loads := make(map[loginKey]*load)
+	loginIINs := make(map[loginKey]map[string]bool)
+	for rowIndex := 1; rowIndex < len(rows); rowIndex++ {
+		row := rows[rowIndex]
+		rp := normalizeRP(getRowCell(row, cols.rp))
+		iin := normalizeIIN(getRowCell(row, cols.iin))
+		login := normalizeLogin(getRowCell(row, cols.attach))
+		if rp == "" || iin == "" || login == "" {
+			continue
+		}
+		key := loginKey{rp: rp, login: login}
+		amount := toDecimal(getRowCell(row, cols.amount))
+		addLoad(loads, loginIINs, key, iin, amount, 1)
+	}
+	return loads, loginIINs
 }
 
 func removeLoad(loads map[loginKey]*load, loginIINs map[loginKey]map[string]bool, key loginKey, iin string, amount decimal.Decimal, materialCount int) {
@@ -2229,12 +2252,27 @@ func parseCleanDecimal(value string) (decimal.Decimal, bool) {
 	text = strings.ReplaceAll(text, " ", "")
 	text = strings.ReplaceAll(text, "\u00a0", "")
 	text = strings.ReplaceAll(text, "\u202f", "")
-	text = strings.ReplaceAll(text, ",", ".")
 	if text == "" {
+		return decimal.Zero, false
+	}
+	if strings.ContainsAny(text, "eE") {
+		text = strings.ReplaceAll(text, ",", ".")
+		number, err := decimal.NewFromString(text)
+		return number, err == nil
+	}
+	if strings.Contains(text, ",") || isLikelyThousandsDot(text) {
 		return decimal.Zero, false
 	}
 	number, err := decimal.NewFromString(text)
 	return number, err == nil
+}
+
+func isLikelyThousandsDot(value string) bool {
+	if strings.Count(value, ".") != 1 {
+		return false
+	}
+	index := strings.Index(value, ".")
+	return index > 0 && index <= 3 && len(value)-index-1 == 3
 }
 
 func normalizeDecimalText(value string) string {
